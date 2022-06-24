@@ -31,6 +31,8 @@ var executablePath = "/home/liangxinyun/akochan-reviewer/target/release/akochan-
 var outputDirectory = "/home/liangxinyun/akochan-output"
 
 func main() {
+	go worker()
+
 	r := gin.Default()
 	r.POST("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -83,7 +85,7 @@ func worker() {
 		}()
 		wg.Wait()
 		// the err is reserved for grpc refactor
-		err.Error()
+		_ = err.Error()
 		isRunning = false
 		runningParams = execRequest{}
 	}
