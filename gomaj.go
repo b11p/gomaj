@@ -143,4 +143,5 @@ func analyze(req execRequest) error {
 	if err != nil {
 		return err
 	}
+	return nil
 }
