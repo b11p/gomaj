@@ -3,10 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -14,12 +16,12 @@ import (
 )
 
 type execRequest struct {
-	Id                 string    `json:"id"`
-	Data               []byte    `json:"data"`
-	TargetActor        int       `json:"targetActor"`
-	PtList             []float64 `json:"ptList"`
-	ExtraPer1000       float64   `json:"extraPer1000"`
-	DeviationThreshold float64   `json:"deviationThreshold"`
+	Id                 string  `json:"id"`
+	Data               []byte  `json:"data"`
+	TargetActor        int     `json:"targetActor"`
+	PtList             []int   `json:"ptList"`
+	ExtraPer1000       float64 `json:"extraPer1000"`
+	DeviationThreshold float64 `json:"deviationThreshold"`
 }
 
 var isRunning bool = false
@@ -29,6 +31,7 @@ var taskChan = make(chan execRequest)
 var workingDirectory = "/home/liangxinyun/akochan-reviewer"
 var executablePath = "/home/liangxinyun/akochan-reviewer/target/release/akochan-reviewer"
 var outputDirectory = "/home/liangxinyun/akochan-output"
+var inputDirectory = "/home/liangxinyun/akochan-input"
 
 func main() {
 	go worker()
@@ -74,6 +77,7 @@ func start(c *gin.Context) {
 func worker() {
 	for {
 		req := <-taskChan
+		log.Printf("Start processing request %s", req.Id)
 		isRunning = true
 		runningParams = req
 		var wg sync.WaitGroup
@@ -82,17 +86,20 @@ func worker() {
 		go func() {
 			defer wg.Done()
 			err = analyze(req)
+			if err != nil {
+				log.Println(err.Error())
+			}
 		}()
 		wg.Wait()
 		// the err is reserved for grpc refactor
-		_ = err.Error()
+		_ = err
 		isRunning = false
 		runningParams = execRequest{}
 	}
 }
 
 func analyze(req execRequest) error {
-	outputPath := path.Join(outputDirectory, req.Id)
+	outputPath := path.Join(outputDirectory, req.Id+".html")
 	fi, err := os.Stat(outputPath)
 	if err == nil {
 		// file exists
@@ -103,18 +110,28 @@ func analyze(req execRequest) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	log.Println("Completed checking file exist")
+
+	inputPath := path.Join(inputDirectory, req.Id+".json")
+	err = os.WriteFile(inputPath, req.Data, 0644)
+	if err != nil {
+		return err
+	}
 
 	env := append(os.Environ(), "LD_LIBRARY_PATH="+path.Join(workingDirectory, "akochan"))
 	ptListStr := make([]string, len(req.PtList))
 	for i, pt := range req.PtList {
-		ptListStr[i] = fmt.Sprintf("%f", pt)
+		ptListStr[i] = strconv.Itoa(pt)
 	}
 	args := []string{
 		"-a", fmt.Sprintf("%d", req.TargetActor),
 		"--pt", strings.Join(ptListStr, ","),
 		"-n", fmt.Sprintf("%f", req.DeviationThreshold),
 		"-o", outputPath,
+		"-i", inputPath,
+		"--no-open",
 	}
+	log.Println(args)
 
 	// create directory if not exists
 	err = os.MkdirAll(outputDirectory, os.ModePerm)
@@ -122,22 +139,11 @@ func analyze(req execRequest) error {
 		return err
 	}
 
+	log.Println("Ready to run")
 	cmd := exec.Command(executablePath, args...)
 	cmd.Dir = workingDirectory
 	cmd.Env = env
 	err = cmd.Start()
-	if err != nil {
-		return err
-	}
-	stdinPipe, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-	_, err = stdinPipe.Write(req.Data)
-	if err != nil {
-		return err
-	}
-	err = stdinPipe.Close()
 	if err != nil {
 		return err
 	}
