@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +28,7 @@ var runningParams execRequest
 var taskChan = make(chan execRequest)
 
 var workingDirectory = "/home/liangxinyun/akochan-reviewer"
-var executablePath = "/home/liangxinyun/akochan-reviewer/target/release/akochan-reviewer"
+var executablePath = "/home/liangxinyun/akochan-reviewer/target/release/mjai-reviewer"
 var outputDirectory = "/home/liangxinyun/akochan-output"
 var inputDirectory = "/home/liangxinyun/akochan-input"
 
@@ -124,12 +123,15 @@ func analyze(req execRequest) error {
 		ptListStr[i] = strconv.Itoa(pt)
 	}
 	args := []string{
+		"-e", "akochan",
 		"-a", fmt.Sprintf("%d", req.TargetActor),
-		"--pt", strings.Join(ptListStr, ","),
-		"-n", fmt.Sprintf("%f", req.DeviationThreshold),
+		// "--pt", strings.Join(ptListStr, ","),
+		"--deviation-threshold", fmt.Sprintf("%f", req.DeviationThreshold),
 		"-o", outputPath,
 		"-i", inputPath,
+		"--show-rating",
 		"--no-open",
+		// "--lang", "en",
 	}
 	log.Println(args)
 
