@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -31,9 +32,23 @@ var workingDirectory = "/home/liangxinyun/akochan-reviewer"
 var executablePath = "/home/liangxinyun/akochan-reviewer/target/release/mjai-reviewer"
 var outputDirectory = "/home/liangxinyun/akochan-output"
 var inputDirectory = "/home/liangxinyun/akochan-input"
+var defaultTacticsPath = "/home/liangxinyun/akochan-reviewer/akochan/tactics.json"
+var modifiedTacticsPath = "/home/liangxinyun/akochan-reviewer/akochan/tactics-mod.json"
+
+var defaultTactics map[string]interface{}
 
 func main() {
 	go worker()
+
+	// init tactics
+	tacticsJson, err := os.ReadFile(defaultTacticsPath)
+	if err != nil {
+		return
+	}
+	err = json.Unmarshal(tacticsJson, &defaultTactics)
+	if err != nil {
+		return
+	}
 
 	r := gin.Default()
 	r.POST("/ping", func(c *gin.Context) {
@@ -117,11 +132,23 @@ func analyze(req execRequest) error {
 		return err
 	}
 
-	env := append(os.Environ(), "LD_LIBRARY_PATH="+path.Join(workingDirectory, "akochan"))
+	// prepare tactics
 	ptListStr := make([]string, len(req.PtList))
 	for i, pt := range req.PtList {
 		ptListStr[i] = strconv.Itoa(pt)
 	}
+	tactics := defaultTactics["tactics"].(map[string]interface{})
+	tactics["jun_pt"] = req.PtList
+	defaultTactics["tactics"] = tactics
+	tacticsJson, err := json.Marshal(defaultTactics)
+	if err != nil {
+		return err
+	}
+	err = os.WriteFile(modifiedTacticsPath, tacticsJson, 0644)
+	if err != nil {
+		return err
+	}
+
 	args := []string{
 		"-e", "akochan",
 		"-a", fmt.Sprintf("%d", req.TargetActor),
@@ -129,6 +156,7 @@ func analyze(req execRequest) error {
 		"--deviation-threshold", fmt.Sprintf("%f", req.DeviationThreshold),
 		"-o", outputPath,
 		"-i", inputPath,
+		"--akochan-tactics", modifiedTacticsPath,
 		"--show-rating",
 		"--no-open",
 		// "--lang", "en",
@@ -140,6 +168,9 @@ func analyze(req execRequest) error {
 	if err != nil {
 		return err
 	}
+
+	// Prepare env
+	env := append(os.Environ(), "LD_LIBRARY_PATH="+path.Join(workingDirectory, "akochan"))
 
 	log.Println("Ready to run")
 	cmd := exec.Command(executablePath, args...)
