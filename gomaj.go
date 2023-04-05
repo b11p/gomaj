@@ -159,7 +159,7 @@ func analyze(req execRequest) error {
 		"--akochan-tactics", modifiedTacticsPath,
 		"--show-rating",
 		"--no-open",
-		// "--lang", "en",
+		"--lang", "zh-CN",
 	}
 	log.Println(args)
 
